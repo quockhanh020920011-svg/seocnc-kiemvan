@@ -26,8 +26,15 @@
   #nameBox input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
 
   #camWrap { display: flex; justify-content: center; }
-  #reader { width: 260px; max-width: 70vw; border-radius: 12px; overflow: hidden; background: #000;
-            min-height: 260px; }
+  #reader { width: 260px; max-width: 70vw; height: 260px; border-radius: 12px; overflow: hidden;
+            background: #000; position: relative; }
+  /* Ép cứng mọi thứ thư viện quét tự vẽ bên trong (video/canvas) phải vừa đúng khung —
+     không cho nó tự vẽ theo độ phân giải gốc của camera (gây tràn full màn hình). */
+  #reader video, #reader canvas {
+    width: 100% !important; height: 100% !important;
+    max-width: 100% !important; max-height: 100% !important;
+    object-fit: cover !important; position: absolute !important; top: 0; left: 0;
+  }
   #startBtn { width: 100%; padding: 16px; border: none; border-radius: 12px; background: #1e6fd9;
               color: #fff; font-size: 16px; font-weight: 700; }
   #camHelp { display: none; margin-top: 10px; padding: 12px; background: #fff3cd; color: #664d03;
