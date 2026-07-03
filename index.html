@@ -12,18 +12,35 @@
   h1 { font-size: 17px; margin: 0 0 2px; }
   #orderName { font-size: 13px; color: #666; margin: 0 0 12px; }
 
+  #inAppBanner { display: none; margin-bottom: 12px; padding: 12px; background: #fff3cd;
+                 color: #664d03; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+
   #dash { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
           margin-bottom: 14px; }
   #count { font-size: 30px; font-weight: 700; }
   #count small { font-size: 14px; font-weight: 400; color: #777; }
+  #brokenCount { font-size: 13px; color: #d63b3b; font-weight: 600; margin-top: 2px; display: none; }
   #missingBtn { margin-top: 10px; width: 100%; padding: 10px; border: none; border-radius: 8px;
                 background: #eef1f5; font-size: 14px; color: #333; }
-  #missingList { margin-top: 10px; display: none; font-size: 13px; max-height: 200px; overflow-y: auto; }
+  #missingList { margin-top: 10px; display: none; font-size: 13px; max-height: 240px; overflow-y: auto; }
   #missingList div { padding: 6px 0; border-bottom: 1px solid #eee; }
   #missingList .id { display: inline-block; min-width: 34px; font-weight: 700; color: #d63b3b; }
+  #missingList .brk .id { color: #b35c00; }
+  #missingList .section { font-weight: 700; color: #999; padding-top: 10px; font-size: 11px;
+                           text-transform: uppercase; }
 
   #nameBox { display: flex; gap: 8px; margin-bottom: 12px; }
   #nameBox input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
+
+  #dmgBox { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 10px 12px;
+            background: #fff; border-radius: 10px; border: 1px solid #eee; }
+  #dmgBox label { font-size: 14px; flex: 1; }
+  #dmgToggle { width: 44px; height: 26px; border-radius: 999px; background: #ccc; border: none;
+               position: relative; flex-shrink: 0; }
+  #dmgToggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+                       border-radius: 50%; background: #fff; transition: left .15s ease; }
+  #dmgToggle.on { background: #d63b3b; }
+  #dmgToggle.on::after { left: 21px; }
 
   #camWrap { display: flex; justify-content: center; }
   #reader { width: 260px; max-width: 70vw; height: 260px; border-radius: 12px; overflow: hidden;
@@ -50,6 +67,7 @@
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   #toast.dup  { background: #d98c00; }
   #toast.err  { background: #d63b3b; }
+  #toast.brk  { background: #b35c00; }
 </style>
 </head>
 <body>
@@ -58,10 +76,17 @@
   <h1>Kiểm ván ABF</h1>
   <p id="orderName">Đang tải đơn hàng…</p>
 
+  <div id="inAppBanner">
+    ⚠️ Đang mở trong app nhắn tin (Zalo/Messenger...) — Camera dễ bị lỗi (phóng to/lag) ở
+    trình duyệt riêng của app này. Bấm nút <b>"•••"</b> (hoặc biểu tượng menu) ở góc màn
+    hình → chọn <b>"Mở bằng Safari"</b> hoặc <b>"Mở bằng Chrome"</b> để quét mượt hơn.
+  </div>
+
   <div id="app" style="display:none;">
     <div id="dash">
       <div id="count">…<small> / … đã kiểm</small></div>
-      <button id="missingBtn" onclick="toggleMissing()">Xem danh sách còn thiếu</button>
+      <div id="brokenCount"></div>
+      <button id="missingBtn" onclick="toggleMissing()">Xem danh sách còn thiếu / hư</button>
       <div id="missingList"></div>
     </div>
 
@@ -69,6 +94,11 @@
       <input id="scannerName" placeholder="Tên người quét (nhập 1 lần)">
     </div>
     <div id="nameWarn">⚠️ Nhập tên người quét trước khi bấm bắt đầu quét.</div>
+
+    <div id="dmgBox">
+      <label for="dmgToggle">🔧 Chế độ đánh dấu tấm HƯ</label>
+      <button id="dmgToggle" onclick="toggleDamageMode()"></button>
+    </div>
 
     <div id="camWrap">
       <div id="reader"></div>
@@ -95,6 +125,19 @@
     document.getElementById('noSheet').style.display = 'block';
   } else {
     document.getElementById('app').style.display = 'block';
+  }
+
+  // Trình duyệt riêng của Zalo/Messenger/Facebook thường xử lý <video> khác chuẩn ->
+  // camera dễ bị phóng to/lag. Không sửa được từ code (do app đó kiểm soát), chỉ báo
+  // trước cho người dùng biết đường mở bằng Safari/Chrome thật.
+  if (/Zalo|FBAN|FBAV|Messenger|Instagram|Line\//i.test(navigator.userAgent)) {
+    document.getElementById('inAppBanner').style.display = 'block';
+  }
+
+  var damageMode = false;
+  function toggleDamageMode() {
+    damageMode = !damageMode;
+    document.getElementById('dmgToggle').className = damageMode ? 'on' : '';
   }
 
   var nameInput = document.getElementById('scannerName');
@@ -133,24 +176,37 @@
     toastTimer = setTimeout(function () { el.className = ''; }, 1500);
   }
 
-  function renderCount(checked, total) {
+  function renderCount(checked, total, brokenCount) {
     document.getElementById('count').innerHTML = checked + '<small> / ' + total + ' đã kiểm</small>';
+    var b = document.getElementById('brokenCount');
+    if (brokenCount) { b.style.display = 'block'; b.textContent = '🔧 ' + brokenCount + ' tấm bị đánh dấu HƯ'; }
+    else { b.style.display = 'none'; }
   }
 
-  function renderMissing(list) {
+  function boardLine(m) {
+    return '<div><span class="id">#' + m.id + '</span>' + m.name + ' — ' + m.size + ' · ' + m.sheet + '</div>';
+  }
+
+  function renderMissing(missing, broken) {
     var box = document.getElementById('missingList');
-    if (!list.length) { box.innerHTML = '<div>✅ Không thiếu tấm nào.</div>'; return; }
-    box.innerHTML = list.map(function (m) {
-      return '<div><span class="id">#' + m.id + '</span>' + m.name + ' — ' + m.size + ' · ' + m.sheet + '</div>';
-    }).join('');
+    var html = '';
+    if (broken && broken.length) {
+      html += '<div class="section">Tấm HƯ (' + broken.length + ')</div>';
+      html += '<div class="brk">' + broken.map(boardLine).join('') + '</div>';
+    }
+    if (missing && missing.length) {
+      html += '<div class="section">Chưa kiểm (' + missing.length + ')</div>';
+      html += missing.map(boardLine).join('');
+    }
+    box.innerHTML = html || '<div>✅ Không thiếu tấm nào.</div>';
   }
 
   function refreshStatus() {
     if (!SHEET_ID) return;
     post('status').then(function (res) {
       if (!res.ok) return;
-      renderCount(res.checked, res.total);
-      renderMissing(res.missing || []);
+      renderCount(res.checked, res.total, res.brokenCount);
+      renderMissing(res.missing || [], res.broken || []);
       document.getElementById('orderName').textContent = res.order_name || '';
     });
   }
@@ -175,18 +231,23 @@
     // mất 0.5-2s/lần, ngoài tầm kiểm soát). Rung/kêu/hiện thông báo tức thời cho cảm giác
     // "quét qua là được luôn", rồi cập nhật lại đúng kết quả khi server phản hồi xong.
     vibrate([40]); beep(880, 0.08);
-    showToast('ok', '🔍 #' + code + ' — đang kiểm tra…');
+    showToast(damageMode ? 'brk' : 'ok', '🔍 #' + code + ' — đang kiểm tra…');
 
-    post('scan', { code: code, scanner: scanner }).then(function (res) {
+    post('scan', { code: code, scanner: scanner, damaged: damageMode ? 'true' : 'false' }).then(function (res) {
       if (!res.ok) {
         showToast('err', '❌ ' + (res.message || 'Mã không thuộc đơn này'));
         vibrate([120, 60, 120]); beep(220, 0.25);
       } else if (res.duplicate) {
-        showToast('dup', '⚠️ ĐÃ KIỂM TRƯỚC — ' + res.name);
+        var prevLabel = res.prev_status === 'Hư' ? 'ĐÃ ĐÁNH DẤU HƯ' : 'ĐÃ KIỂM TRƯỚC';
+        showToast('dup', '⚠️ ' + prevLabel + ' — ' + res.name);
         vibrate([200]); beep(300, 0.2);
+      } else if (res.damaged) {
+        showToast('brk', '🔧 ĐÃ ĐÁNH DẤU HƯ — ' + res.name);
+        renderCount(res.checked, res.total, res.brokenCount);
+        refreshStatus();
       } else {
         showToast('ok', '✅ ' + res.name);
-        renderCount(res.checked, res.total);
+        renderCount(res.checked, res.total, res.brokenCount);
         refreshStatus();
       }
     }).catch(function () {
@@ -244,7 +305,14 @@
       if (++tries > 20) clearInterval(poll);
     }, 100);
 
-    qr.start({ facingMode: 'environment' }, { fps: 15, qrbox: 220 }, onScan, function () {})
+    // Giảm độ phân giải camera yêu cầu (640x480 là dư sức đọc QR, nhẹ máy hơn nhiều so
+    // với mặc định full-HD của camera sau — vừa mượt hơn, vừa GIẢI MÃ NHANH HƠN vì ít
+    // điểm ảnh phải xử lý mỗi khung hình).
+    qr.start(
+      { facingMode: 'environment' },
+      { fps: 15, qrbox: 220,
+        videoConstraints: { facingMode: 'environment', width: { ideal: 640, max: 960 }, height: { ideal: 480, max: 720 } } },
+      onScan, function () {})
       .then(function () {
         document.getElementById('startBtn').style.display = 'none';
         fixVideoEl(readerEl.querySelector('video'));
