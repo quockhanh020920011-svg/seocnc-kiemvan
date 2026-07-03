@@ -214,27 +214,43 @@
     document.getElementById('startBtn').disabled = true;
     document.getElementById('startBtn').textContent = 'Đang mở Camera…';
     document.getElementById('camHelp').style.display = 'none';
-    // BỎ useBarCodeDetectorIfSupported: chế độ này trên Safari iPhone khiến thẻ <video>
-    // thiếu thuộc tính "phát trong khung" -> Safari hiện thanh điều khiển video gốc
-    // (nút Play/loa/Phát trực tiếp) và bấm Play sẽ mở trình phát TOÀN MÀN HÌNH riêng của
-    // Safari. Quay lại đường xử lý ổn định trước đó (JS thuần, không dùng phần cứng).
+
+    // Bắt đúng KHOẢNH KHẮC thẻ <video> được thư viện tạo ra (sớm hơn NHIỀU so với chờ
+    // qr.start() giải quyết xong) và gắn thuộc tính "phát trong khung" NGAY LẬP TỨC —
+    // gắn trễ (sau khi start() xong, camera đã chạy) không ăn: Safari đã lỡ quyết định
+    // hiện thanh điều khiển gốc (Play/loa/Phát trực tiếp) từ trước đó rồi.
+    function fixVideoEl(v) {
+      if (!v || v.dataset.inlineFixed) return;
+      v.dataset.inlineFixed = '1';
+      v.setAttribute('playsinline', 'true');
+      v.setAttribute('webkit-playsinline', 'true');
+      v.setAttribute('muted', 'true');
+      v.setAttribute('autoplay', 'true');
+      v.removeAttribute('controls');
+      v.disablePictureInPicture = true;
+      v.muted = true;
+      v.controls = false;
+      var p = v.play();
+      if (p && p.catch) p.catch(function () {});
+    }
+    var readerEl = document.getElementById('reader');
+    var mo = new MutationObserver(function () { fixVideoEl(readerEl.querySelector('video')); });
+    mo.observe(readerEl, { childList: true, subtree: true });
+    // Phòng khi trình duyệt tạo video mà không qua "thêm node" theo cách MutationObserver
+    // bắt được — kiểm tra thêm vài lần trong 2s đầu cho chắc.
+    var tries = 0;
+    var poll = setInterval(function () {
+      fixVideoEl(readerEl.querySelector('video'));
+      if (++tries > 20) clearInterval(poll);
+    }, 100);
+
     qr.start({ facingMode: 'environment' }, { fps: 15, qrbox: 220 }, onScan, function () {})
       .then(function () {
         document.getElementById('startBtn').style.display = 'none';
-        // Khoá chắc: ép thẻ <video> thư viện vừa tạo PHẢI phát trong khung, không tiếng,
-        // không cho Safari coi là video thường (nút Play/toàn màn hình).
-        var v = document.querySelector('#reader video');
-        if (v) {
-          v.setAttribute('playsinline', 'true');
-          v.setAttribute('webkit-playsinline', 'true');
-          v.muted = true;
-          v.setAttribute('muted', 'true');
-          v.setAttribute('autoplay', 'true');
-          v.controls = false;
-          (v.play() || Promise.resolve()).catch(function () {});
-        }
+        fixVideoEl(readerEl.querySelector('video'));
       })
       .catch(function (e) {
+        mo.disconnect(); clearInterval(poll);
         document.getElementById('startBtn').disabled = false;
         document.getElementById('startBtn').textContent = '▶ Bấm để bắt đầu quét (thử lại)';
         document.getElementById('camHelp').style.display = 'block';
