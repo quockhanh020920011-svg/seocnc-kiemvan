@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SEO_CNC — Kiểm ván</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 12px;
+         background: #f4f5f7; color: #222; }
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  #orderName { font-size: 13px; color: #666; margin: 0 0 12px; }
+  #nameBox { display: flex; gap: 8px; margin-bottom: 12px; }
+  #nameBox input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
+  #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; min-height: 60px; }
+  #startBtn { width: 100%; padding: 16px; border: none; border-radius: 12px; background: #1e6fd9;
+              color: #fff; font-size: 16px; font-weight: 700; }
+  #camHelp { display: none; margin-top: 10px; padding: 12px; background: #fff3cd; color: #664d03;
+             border-radius: 10px; font-size: 13px; line-height: 1.5; }
+  #result { margin-top: 12px; padding: 14px; border-radius: 10px; font-size: 15px; font-weight: 600;
+            min-height: 20px; text-align: center; background: #eee; color: #555; }
+  #result.ok   { background: #1e9e50; color: #fff; }
+  #result.dup  { background: #d98c00; color: #fff; }
+  #result.err  { background: #d63b3b; color: #fff; }
+  #dash { margin-top: 14px; background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  #count { font-size: 28px; font-weight: 700; }
+  #count small { font-size: 14px; font-weight: 400; color: #777; }
+  #missingBtn { margin-top: 10px; width: 100%; padding: 10px; border: none; border-radius: 8px;
+                background: #eef1f5; font-size: 14px; color: #333; }
+  #missingList { margin-top: 10px; display: none; font-size: 13px; }
+  #missingList div { padding: 6px 0; border-bottom: 1px solid #eee; }
+  #missingList .id { display: inline-block; min-width: 34px; font-weight: 700; color: #d63b3b; }
+  #noSheet { padding: 16px; background: #fff3cd; border-radius: 10px; }
+</style>
+</head>
+<body>
+  <h1>Kiểm ván ABF</h1>
+  <p id="orderName">Đang tải đơn hàng…</p>
+
+  <div id="app" style="display:none;">
+    <div id="nameBox">
+      <input id="scannerName" placeholder="Tên người quét (nhập 1 lần)">
+    </div>
+
+    <button id="startBtn" onclick="startScanning()">▶ Bấm để bắt đầu quét</button>
+    <div id="reader" style="display:none;"></div>
+    <div id="camHelp">
+      Không mở được Camera. Thử theo thứ tự:<br>
+      1) Bấm biểu tượng <b>ổ khoá 🔒</b> cạnh địa chỉ web → mục <b>Camera</b> → <b>Cho phép</b> → tải lại trang.<br>
+      2) Đảm bảo đang mở bằng <b>Chrome/Safari thật</b>, không phải mở từ trong Zalo/Messenger/Facebook.<br>
+      3) Máy có Camera khác đang dùng (đang gọi video Zalo/Messenger...) → tắt app đó rồi thử lại.
+    </div>
+    <div id="result" style="display:none;">Đưa camera vào mã QR trên tem ABF để quét</div>
+
+    <div id="dash">
+      <div id="count">…<small> / … đã kiểm</small></div>
+      <button id="missingBtn" onclick="toggleMissing()">Xem danh sách còn thiếu</button>
+      <div id="missingList"></div>
+    </div>
+  </div>
+
+  <div id="noSheet" style="display:none;">Thiếu mã đơn hàng trong link (?sheet=...). Mở lại link đầy đủ chủ đã gửi.</div>
+
+<script>
+  // URL Web App Apps Script (chỉ dùng làm API lưu dữ liệu — trang này KHÔNG chạy trên
+  // Apps Script nữa, vì Apps Script tự bọc trang trong iframe chặn Camera).
+  var BASE_URL = 'https://script.google.com/macros/s/AKfycbzufOHkVqDXRG9CLevVvwd3-ETHzRu3imk2mLWZRgVKvvpMBsM1KwRbkbV2arXXweyQVw/exec';
+  var SHEET_ID = new URLSearchParams(window.location.search).get('sheet') || '';
+  var scanning = true;
+
+  if (!SHEET_ID) {
+    document.getElementById('orderName').textContent = '';
+    document.getElementById('noSheet').style.display = 'block';
+  } else {
+    document.getElementById('app').style.display = 'block';
+  }
+
+  var nameInput = document.getElementById('scannerName');
+  if (nameInput) {
+    nameInput.value = localStorage.getItem('kv_scanner_name') || '';
+    nameInput.addEventListener('change', function () {
+      localStorage.setItem('kv_scanner_name', nameInput.value.trim());
+    });
+  }
+
+  function post(action, extra) {
+    var body = Object.assign({ action: action, sheet: SHEET_ID }, extra || {});
+    return fetch(BASE_URL, { method: 'POST', body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); });
+  }
+
+  function vibrate(pattern) { if (navigator.vibrate) navigator.vibrate(pattern); }
+
+  function beep(freq, dur) {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = freq; o.connect(g); g.connect(ctx.destination);
+      o.start(); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+      o.stop(ctx.currentTime + dur);
+    } catch (e) {}
+  }
+
+  function showResult(cls, text) {
+    var el = document.getElementById('result');
+    el.className = cls; el.textContent = text;
+  }
+
+  function renderCount(checked, total) {
+    document.getElementById('count').innerHTML = checked + '<small> / ' + total + ' đã kiểm</small>';
+  }
+
+  function renderMissing(list) {
+    var box = document.getElementById('missingList');
+    if (!list.length) { box.innerHTML = '<div>✅ Không thiếu tấm nào.</div>'; return; }
+    box.innerHTML = list.map(function (m) {
+      return '<div><span class="id">#' + m.id + '</span>' + m.name + ' — ' + m.size + ' · ' + m.sheet + '</div>';
+    }).join('');
+  }
+
+  function refreshStatus() {
+    if (!SHEET_ID) return;
+    post('status').then(function (res) {
+      if (!res.ok) return;
+      renderCount(res.checked, res.total);
+      renderMissing(res.missing || []);
+      document.getElementById('orderName').textContent = res.order_name || '';
+    });
+  }
+
+  function onScan(code) {
+    if (!scanning) return;
+    scanning = false;
+    var scanner = nameInput.value.trim();
+    if (!scanner) {
+      showResult('err', '⚠️ Nhập tên người quét trước đã!');
+      vibrate([80, 60, 80]); scanning = true; return;
+    }
+    post('scan', { code: code, scanner: scanner }).then(function (res) {
+      if (!res.ok) {
+        showResult('err', '❌ ' + (res.message || 'Mã không thuộc đơn này'));
+        vibrate([120, 60, 120]); beep(220, 0.25);
+      } else if (res.duplicate) {
+        showResult('dup', '⚠️ ĐÃ KIỂM TRƯỚC — ' + res.name + '\nlúc ' + res.prev_time + ' bởi ' + res.prev_scanner);
+        vibrate([200]); beep(300, 0.2);
+      } else {
+        showResult('ok', '✅ ' + res.name);
+        vibrate([40]); beep(880, 0.12);
+        renderCount(res.checked, res.total);
+      }
+      setTimeout(function () { scanning = true; refreshStatus(); }, 1400);
+    }).catch(function () {
+      showResult('err', '❌ Lỗi mạng, thử lại.');
+      scanning = true;
+    });
+  }
+
+  // QUAN TRỌNG: chỉ xin quyền Camera khi có THAO TÁC CHẠM thật của người dùng (bấm nút) —
+  // nhiều trình duyệt di động (đặc biệt Safari iPhone) CHẶN THẲNG getUserMedia nếu gọi tự
+  // động lúc trang vừa tải xong, báo NotAllowedError y hệt như bị từ chối quyền thật.
+  var qr = SHEET_ID ? new Html5Qrcode('reader') : null;
+  function startScanning() {
+    if (!qr) return;
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('startBtn').textContent = 'Đang mở Camera…';
+    document.getElementById('camHelp').style.display = 'none';
+    qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: 240 }, onScan, function () {})
+      .then(function () {
+        document.getElementById('startBtn').style.display = 'none';
+        document.getElementById('reader').style.display = 'block';
+        document.getElementById('result').style.display = 'block';
+      })
+      .catch(function (e) {
+        document.getElementById('startBtn').disabled = false;
+        document.getElementById('startBtn').textContent = '▶ Bấm để bắt đầu quét (thử lại)';
+        document.getElementById('camHelp').style.display = 'block';
+        console.error('getUserMedia error:', e);
+      });
+  }
+
+  refreshStatus();
+  setInterval(refreshStatus, 3000);
+
+  function toggleMissing() {
+    var box = document.getElementById('missingList');
+    box.style.display = box.style.display === 'block' ? 'none' : 'block';
+  }
+</script>
+</body>
+</html>
