@@ -207,7 +207,12 @@
     document.getElementById('startBtn').disabled = true;
     document.getElementById('startBtn').textContent = 'Đang mở Camera…';
     document.getElementById('camHelp').style.display = 'none';
-    qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: 200 }, onScan, function () {})
+    // fps cao hơn + useBarCodeDetectorIfSupported: dùng bộ đọc mã vạch PHẦN CỨNG có sẵn
+    // trên máy (nhanh hơn nhiều so với thư viện JS thuần) khi trình duyệt hỗ trợ — tự
+    // động rớt về thư viện JS như cũ nếu máy không hỗ trợ, không vỡ gì.
+    qr.start({ facingMode: 'environment' },
+      { fps: 20, qrbox: 220, experimentalFeatures: { useBarCodeDetectorIfSupported: true } },
+      onScan, function () {})
       .then(function () {
         document.getElementById('startBtn').style.display = 'none';
       })
