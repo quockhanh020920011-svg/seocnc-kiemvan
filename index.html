@@ -214,14 +214,25 @@
     document.getElementById('startBtn').disabled = true;
     document.getElementById('startBtn').textContent = 'Đang mở Camera…';
     document.getElementById('camHelp').style.display = 'none';
-    // fps cao hơn + useBarCodeDetectorIfSupported: dùng bộ đọc mã vạch PHẦN CỨNG có sẵn
-    // trên máy (nhanh hơn nhiều so với thư viện JS thuần) khi trình duyệt hỗ trợ — tự
-    // động rớt về thư viện JS như cũ nếu máy không hỗ trợ, không vỡ gì.
-    qr.start({ facingMode: 'environment' },
-      { fps: 20, qrbox: 220, experimentalFeatures: { useBarCodeDetectorIfSupported: true } },
-      onScan, function () {})
+    // BỎ useBarCodeDetectorIfSupported: chế độ này trên Safari iPhone khiến thẻ <video>
+    // thiếu thuộc tính "phát trong khung" -> Safari hiện thanh điều khiển video gốc
+    // (nút Play/loa/Phát trực tiếp) và bấm Play sẽ mở trình phát TOÀN MÀN HÌNH riêng của
+    // Safari. Quay lại đường xử lý ổn định trước đó (JS thuần, không dùng phần cứng).
+    qr.start({ facingMode: 'environment' }, { fps: 15, qrbox: 220 }, onScan, function () {})
       .then(function () {
         document.getElementById('startBtn').style.display = 'none';
+        // Khoá chắc: ép thẻ <video> thư viện vừa tạo PHẢI phát trong khung, không tiếng,
+        // không cho Safari coi là video thường (nút Play/toàn màn hình).
+        var v = document.querySelector('#reader video');
+        if (v) {
+          v.setAttribute('playsinline', 'true');
+          v.setAttribute('webkit-playsinline', 'true');
+          v.muted = true;
+          v.setAttribute('muted', 'true');
+          v.setAttribute('autoplay', 'true');
+          v.controls = false;
+          (v.play() || Promise.resolve()).catch(function () {});
+        }
       })
       .catch(function (e) {
         document.getElementById('startBtn').disabled = false;
