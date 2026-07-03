@@ -13,7 +13,7 @@
   #orderName { font-size: 13px; color: #666; margin: 0 0 12px; }
   #nameBox { display: flex; gap: 8px; margin-bottom: 12px; }
   #nameBox input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
-  #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; min-height: 60px; }
+  #reader { width: 100%; border-radius: 12px; overflow: hidden; background: #000; min-height: 280px; }
   #startBtn { width: 100%; padding: 16px; border: none; border-radius: 12px; background: #1e6fd9;
               color: #fff; font-size: 16px; font-weight: 700; }
   #camHelp { display: none; margin-top: 10px; padding: 12px; background: #fff3cd; color: #664d03;
@@ -44,7 +44,7 @@
     </div>
 
     <button id="startBtn" onclick="startScanning()">▶ Bấm để bắt đầu quét</button>
-    <div id="reader" style="display:none;"></div>
+    <div id="reader"></div>
     <div id="camHelp">
       Không mở được Camera. Thử theo thứ tự:<br>
       1) Bấm biểu tượng <b>ổ khoá 🔒</b> cạnh địa chỉ web → mục <b>Camera</b> → <b>Cho phép</b> → tải lại trang.<br>
@@ -156,9 +156,14 @@
     });
   }
 
-  // QUAN TRỌNG: chỉ xin quyền Camera khi có THAO TÁC CHẠM thật của người dùng (bấm nút) —
-  // nhiều trình duyệt di động (đặc biệt Safari iPhone) CHẶN THẲNG getUserMedia nếu gọi tự
-  // động lúc trang vừa tải xong, báo NotAllowedError y hệt như bị từ chối quyền thật.
+  // QUAN TRỌNG (2 điều dễ vỡ với thư viện quét camera):
+  // 1) Chỉ xin quyền Camera khi có THAO TÁC CHẠM thật của người dùng (bấm nút) — nhiều
+  //    trình duyệt di động (đặc biệt Safari iPhone) CHẶN THẲNG getUserMedia nếu gọi tự
+  //    động lúc trang vừa tải xong, báo NotAllowedError y hệt như bị từ chối quyền thật.
+  // 2) Khung #reader PHẢI đã HIỂN THỊ (có kích thước thật) TRƯỚC khi gọi qr.start() —
+  //    nếu khung đang display:none lúc thư viện khởi tạo, nó đo được kích thước 0x0 và
+  //    video/canvas bên trong vẽ ra kích thước 0 luôn: camera vẫn bật (đèn cam sáng) nhưng
+  //    không có hình gì hiện lên, dù sau đó có bật display:block lại cũng không tự sửa.
   var qr = SHEET_ID ? new Html5Qrcode('reader') : null;
   function startScanning() {
     if (!qr) return;
@@ -168,7 +173,6 @@
     qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: 240 }, onScan, function () {})
       .then(function () {
         document.getElementById('startBtn').style.display = 'none';
-        document.getElementById('reader').style.display = 'block';
         document.getElementById('result').style.display = 'block';
       })
       .catch(function (e) {
@@ -189,4 +193,3 @@
 </script>
 </body>
 </html>
-
