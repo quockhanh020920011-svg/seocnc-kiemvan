@@ -163,6 +163,13 @@
       vibrate([80, 60, 80]);
       return;
     }
+
+    // PHẢN HỒI NGAY lúc vừa đọc được mã — KHÔNG đợi máy chủ trả lời (Apps Script có thể
+    // mất 0.5-2s/lần, ngoài tầm kiểm soát). Rung/kêu/hiện thông báo tức thời cho cảm giác
+    // "quét qua là được luôn", rồi cập nhật lại đúng kết quả khi server phản hồi xong.
+    vibrate([40]); beep(880, 0.08);
+    showToast('ok', '🔍 #' + code + ' — đang kiểm tra…');
+
     post('scan', { code: code, scanner: scanner }).then(function (res) {
       if (!res.ok) {
         showToast('err', '❌ ' + (res.message || 'Mã không thuộc đơn này'));
@@ -172,7 +179,6 @@
         vibrate([200]); beep(300, 0.2);
       } else {
         showToast('ok', '✅ ' + res.name);
-        vibrate([40]); beep(880, 0.12);
         renderCount(res.checked, res.total);
         refreshStatus();
       }
