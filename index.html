@@ -6,45 +6,57 @@
 <title>SEO_CNC — Kiểm ván</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
+  /* Bảng màu khớp với hộp thoại SketchUp (BuyDialog) — 1 thương hiệu nhất quán xuyên suốt
+     mọi màn hình của SEO_CNC_TOOL, không phải màu tự chọn riêng cho trang này. */
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; padding: 12px;
+  body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 14px;
          background: #f4f5f7; color: #222; }
-  h1 { font-size: 17px; margin: 0 0 2px; }
-  #orderName { font-size: 13px; color: #666; margin: 0 0 12px; }
 
-  #inAppBanner { display: none; margin-bottom: 12px; padding: 12px; background: #fff3cd;
-                 color: #664d03; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+  #brandHeader { margin-bottom: 14px; }
+  .brandName { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; color: #4659d8;
+               text-transform: uppercase; margin-bottom: 3px; }
+  h1 { font-size: 19px; margin: 0 0 2px; color: #1f2a44; }
+  #orderName { font-size: 13px; color: #777; margin: 0; }
 
-  #dash { background: #fff; border-radius: 12px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.08);
-          margin-bottom: 14px; }
-  #count { font-size: 30px; font-weight: 700; }
-  #count small { font-size: 14px; font-weight: 400; color: #777; }
-  #brokenCount { font-size: 13px; color: #d63b3b; font-weight: 600; margin-top: 2px; display: none; }
-  #missingBtn { margin-top: 10px; width: 100%; padding: 10px; border: none; border-radius: 8px;
-                background: #eef1f5; font-size: 14px; color: #333; }
+  #inAppBanner { display: none; margin-bottom: 12px; padding: 12px 14px; background: #fff8e6;
+                 border: 1px solid #f0dca0; color: #7a5b00; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+
+  #dash { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 4px rgba(31,42,68,.08);
+          border: 1px solid #eceef3; margin-bottom: 14px; }
+  #count { font-size: 32px; font-weight: 700; color: #1f2a44; }
+  #count small { font-size: 14px; font-weight: 400; color: #888; }
+  #brokenCount { font-size: 13px; color: #b35c00; font-weight: 700; margin-top: 4px; display: none; }
+  #missingBtn { margin-top: 12px; width: 100%; padding: 10px; border: 1px solid #e3e6ee; border-radius: 9px;
+                background: #f7f8fb; font-size: 13.5px; color: #4659d8; font-weight: 600; }
   #missingList { margin-top: 10px; display: none; font-size: 13px; max-height: 240px; overflow-y: auto; }
   #missingList div { padding: 6px 0; border-bottom: 1px solid #eee; }
-  #missingList .id { display: inline-block; min-width: 34px; font-weight: 700; color: #d63b3b; }
+  #missingList .id { display: inline-block; min-width: 34px; font-weight: 700; color: #9b1c1c; }
   #missingList .brk .id { color: #b35c00; }
   #missingList .section { font-weight: 700; color: #999; padding-top: 10px; font-size: 11px;
                            text-transform: uppercase; }
 
   #nameBox { display: flex; gap: 8px; margin-bottom: 12px; }
-  #nameBox input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 15px; }
+  #nameBox input { flex: 1; padding: 10px 12px; border: 1.5px solid #c7ccd6; border-radius: 9px; font-size: 15px; }
+  #nameBox input:focus { outline: none; border-color: #4659d8; }
 
-  #dmgBox { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 10px 12px;
-            background: #fff; border-radius: 10px; border: 1px solid #eee; }
-  #dmgBox label { font-size: 14px; flex: 1; }
+  #dmgBox { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 11px 14px;
+            background: #fff; border-radius: 10px; border: 1px solid #eceef3; }
+  #dmgBox label { font-size: 14px; flex: 1; color: #333; }
   #dmgToggle { width: 44px; height: 26px; border-radius: 999px; background: #ccc; border: none;
                position: relative; flex-shrink: 0; }
   #dmgToggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
                        border-radius: 50%; background: #fff; transition: left .15s ease; }
-  #dmgToggle.on { background: #d63b3b; }
+  #dmgToggle.on { background: #b35c00; }
   #dmgToggle.on::after { left: 21px; }
 
+  #hidBox { margin-bottom: 12px; }
+  #hidInput { width: 100%; padding: 10px 12px; border: 1.5px dashed #c7ccd6; border-radius: 9px;
+              font-size: 13px; color: #666; background: #fbfbfd; }
+  #hidInput:focus { outline: none; border-color: #4659d8; border-style: solid; color: #222; background: #fff; }
+
   #camWrap { display: flex; justify-content: center; }
-  #reader { width: 260px; max-width: 70vw; height: 260px; border-radius: 12px; overflow: hidden;
-            background: #000; position: relative; }
+  #reader { width: 260px; max-width: 70vw; height: 260px; border-radius: 14px; overflow: hidden;
+            background: #000; position: relative; box-shadow: 0 2px 10px rgba(31,42,68,.15); }
   /* Ép cứng mọi thứ thư viện quét tự vẽ bên trong (video/canvas) phải vừa đúng khung —
      không cho nó tự vẽ theo độ phân giải gốc của camera (gây tràn full màn hình). */
   #reader video, #reader canvas {
@@ -52,29 +64,33 @@
     max-width: 100% !important; max-height: 100% !important;
     object-fit: cover !important; position: absolute !important; top: 0; left: 0;
   }
-  #startBtn { width: 100%; padding: 16px; border: none; border-radius: 12px; background: #1e6fd9;
-              color: #fff; font-size: 16px; font-weight: 700; }
-  #camHelp { display: none; margin-top: 10px; padding: 12px; background: #fff3cd; color: #664d03;
-             border-radius: 10px; font-size: 13px; line-height: 1.5; }
-  #nameWarn { display: none; margin-top: -6px; margin-bottom: 10px; color: #d63b3b; font-size: 13px; }
-  #noSheet { padding: 16px; background: #fff3cd; border-radius: 10px; }
+  #startBtn { width: 100%; padding: 16px; border: none; border-radius: 12px; background: #4659d8;
+              color: #fff; font-size: 16px; font-weight: 700; margin-top: 14px; }
+  #startBtn:disabled { opacity: .6; }
+  #camHelp { display: none; margin-top: 10px; padding: 12px 14px; background: #fff8e6; border: 1px solid #f0dca0;
+             color: #7a5b00; border-radius: 10px; font-size: 13px; line-height: 1.5; }
+  #nameWarn { display: none; margin-top: -6px; margin-bottom: 10px; color: #9b1c1c; font-size: 13px; }
+  #noSheet { padding: 16px; background: #fff8e6; border: 1px solid #f0dca0; color: #7a5b00; border-radius: 10px; }
 
   #toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%) translateY(-30px);
-           background: #1e9e50; color: #fff; padding: 10px 18px; border-radius: 999px;
+           background: #176b32; color: #fff; padding: 10px 18px; border-radius: 999px;
            font-size: 14px; font-weight: 600; opacity: 0; transition: all .2s ease; z-index: 999;
            box-shadow: 0 4px 14px rgba(0,0,0,.3); pointer-events: none; max-width: 92vw;
            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-  #toast.dup  { background: #d98c00; }
-  #toast.err  { background: #d63b3b; }
+  #toast.dup  { background: #a06a00; }
+  #toast.err  { background: #9b1c1c; }
   #toast.brk  { background: #b35c00; }
 </style>
 </head>
 <body>
   <div id="toast"></div>
 
-  <h1>Kiểm ván ABF</h1>
-  <p id="orderName">Đang tải đơn hàng…</p>
+  <div id="brandHeader">
+    <div class="brandName">SEO_CNC_TOOL</div>
+    <h1>Kiểm ván ABF</h1>
+    <p id="orderName">Đang tải đơn hàng…</p>
+  </div>
 
   <div id="inAppBanner">
     ⚠️ Đang mở trong app nhắn tin (Zalo/Messenger...) — Camera dễ bị lỗi (phóng to/lag) ở
@@ -98,6 +114,10 @@
     <div id="dmgBox">
       <label for="dmgToggle">🔧 Chế độ đánh dấu tấm HƯ</label>
       <button id="dmgToggle" onclick="toggleDamageMode()"></button>
+    </div>
+
+    <div id="hidBox">
+      <input id="hidInput" placeholder="🔌 Dùng máy quét mã vạch rời? Bấm vào đây rồi quét" autocomplete="off">
     </div>
 
     <div id="camWrap">
@@ -331,6 +351,22 @@
         document.getElementById('camHelp').style.display = 'block';
         console.error('getUserMedia error:', e);
       });
+  }
+
+  // Máy quét mã vạch rời (USB/Bluetooth) hoạt động kiểu GIẢ BÀN PHÍM: tự "gõ" mã rồi gửi
+  // Enter — không cần Camera/quyền gì cả. CỐ Ý bắt khách tự BẤM VÀO ô này trước (không tự
+  // động chiếm focus) để KHÔNG bao giờ tự bật bàn phím ảo ngoài ý muốn trên điện thoại
+  // đang dùng Camera (luồng chính, đã ổn định) — chỉ ai thật sự có máy quét rời mới đụng
+  // tới ô này. Tái dùng thẳng onScan() nên có đủ debounce/kiểm tra tên/toast như Camera.
+  var hidInput = document.getElementById('hidInput');
+  if (hidInput) {
+    hidInput.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      var code = hidInput.value.trim();
+      hidInput.value = '';
+      if (code) onScan(code);
+    });
   }
 
   refreshStatus();
