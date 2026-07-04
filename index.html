@@ -342,14 +342,15 @@
 
   function startWasmScanning() {
     var readerEl = document.getElementById('reader');
-    // ⚠️ BẢN TEST 2026-07-04 (đang chờ chủ tự đo trên điện thoại thật — xem PERF_LOG bên
-    // dưới): tăng từ 640x480 lên 1280x720 để có thêm chi tiết ảnh cho tem bị trầy/rách
-    // (tem lành vẫn đọc tốt ở độ phân giải thấp, nhưng tem hỏng cần nhiều điểm ảnh/module
-    // hơn mới còn đủ margin sửa lỗi để giải mã — đã xác nhận bằng test thật, không phải
-    // đoán). Nếu chủ báo "chậm hơn"/lag lúc quét tem thường, đây là nghi phạm đầu tiên,
-    // hạ ideal xuống dần (vd 960x540) và giảm CROP_SIZE tương ứng.
+    // ⚠️ BẢN TEST 2026-07-04 (vòng 2, đang chờ chủ tự đo trên điện thoại thật — xem
+    // PERF_LOG bên dưới): vòng 1 dùng 1280x720/CROP_SIZE=240 — chủ xác nhận tem trầy đã
+    // từ "không bao giờ đọc được" chuyển thành "lúc được lúc không" (đúng hướng), tốc độ
+    // "chậm hơn một chút nhưng chấp nhận được". Chủ muốn thử tăng thêm để ổn định hơn nữa
+    // -> tăng tiếp lên 1600x900 (giữ nguyên tỉ lệ 16:9, không đổi hướng camera). Nếu chủ
+    // báo "chậm hơn"/lag rõ rệt lúc quét tem thường, hạ dần về phía 1280x720 (vòng 1) chứ
+    // đừng hạ hẳn về 640x480 gốc (đã xác nhận không đủ cho tem trầy).
     return navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1440 } }
+      video: { facingMode: 'environment', width: { ideal: 1600, max: 2560 }, height: { ideal: 900, max: 1800 } }
     }).then(function (stream) {
       wasmStream = stream;
       // KHÔNG dùng readerEl.innerHTML = '' (sẽ xoá mất #aimBox khung ngắm) — chỉ dọn
@@ -371,14 +372,14 @@
           // ⚠️ BUG ĐÃ SỬA TRƯỚC ĐÂY (bản đầu giải mã CẢ khung hình 640x480 = ~307.000 điểm
           // ảnh mỗi lần -> chậm hơn hẳn bản html5-qrcode cũ). Từ đó CHỈ cắt 1 vùng vuông
           // CHÍNH GIỮA khung hình (CROP_SIZE) để giải mã.
-          // ⚠️ BẢN TEST 2026-07-04: tăng CROP_SIZE từ 160 lên 240 (đi kèm tăng độ phân giải
-          // camera ở trên) — vẫn giữ đúng TỈ LỆ so với chiều nhỏ của khung hình như bản 160
-          // cũ (160/480 ≈ 240/720 ≈ 33%) nên khung ngắm #aimBox không cần đổi. Lý do: tem
-          // lành đọc tốt ở 160px, nhưng tem trầy/rách cần thêm điểm ảnh/module mới còn đủ
-          // margin sửa lỗi để giải mã (đã xác nhận bằng test thật ngoài trang, không đoán
-          // mò) — đổi lại có thể chậm hơn, CẦN chủ tự đo trên điện thoại thật (xem log
-          // "[KiemVan][PERF]" trong Safari Console) trước khi chốt số này.
-          var CROP_SIZE = 240;
+          // ⚠️ BẢN TEST 2026-07-04 (vòng 2): tăng CROP_SIZE từ 240 lên 320 (đi kèm tăng độ
+          // phân giải camera ở trên) — vẫn giữ tỉ lệ ~33-35% so với chiều nhỏ của khung
+          // hình (320/900 ≈ 35.5%, xấp xỉ 240/720 ≈ 33% của vòng 1) nên khung ngắm #aimBox
+          // không cần đổi. Xử lý ~1.8 lần điểm ảnh so với vòng 1 (240) -> CẦN chủ tự đo lại
+          // cảm giác tốc độ trên điện thoại thật (xem log "[KiemVan][PERF]" nếu có Mac nối
+          // Web Inspector) trước khi chốt số này — vòng 1 đã "chậm hơn chút nhưng chấp
+          // nhận được", vòng 2 nhiều khả năng chậm hơn nữa.
+          var CROP_SIZE = 320;
           var sx = Math.max(0, (video.videoWidth - CROP_SIZE) / 2);
           var sy = Math.max(0, (video.videoHeight - CROP_SIZE) / 2);
           var sw = Math.min(CROP_SIZE, video.videoWidth);
