@@ -342,8 +342,14 @@
 
   function startWasmScanning() {
     var readerEl = document.getElementById('reader');
+    // ⚠️ BẢN TEST 2026-07-04 (đang chờ chủ tự đo trên điện thoại thật — xem PERF_LOG bên
+    // dưới): tăng từ 640x480 lên 1280x720 để có thêm chi tiết ảnh cho tem bị trầy/rách
+    // (tem lành vẫn đọc tốt ở độ phân giải thấp, nhưng tem hỏng cần nhiều điểm ảnh/module
+    // hơn mới còn đủ margin sửa lỗi để giải mã — đã xác nhận bằng test thật, không phải
+    // đoán). Nếu chủ báo "chậm hơn"/lag lúc quét tem thường, đây là nghi phạm đầu tiên,
+    // hạ ideal xuống dần (vd 960x540) và giảm CROP_SIZE tương ứng.
     return navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 640, max: 960 }, height: { ideal: 480, max: 720 } }
+      video: { facingMode: 'environment', width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1440 } }
     }).then(function (stream) {
       wasmStream = stream;
       // KHÔNG dùng readerEl.innerHTML = '' (sẽ xoá mất #aimBox khung ngắm) — chỉ dọn
@@ -362,14 +368,17 @@
           video.removeEventListener('loadedmetadata', onMeta);
           if (!video.videoWidth || !video.videoHeight) { settled = true; reject(new Error('video 0x0')); return; }
 
-          // ⚠️ BUG ĐÃ SỬA (bản trước giải mã CẢ khung hình 640x480 = ~307.000 điểm ảnh mỗi
-          // lần -> nhiều hơn ~7-10 LẦN so với bản html5-qrcode cũ (qrbox 180-220px, chỉ
-          // ~32.000-48.000 điểm ảnh) -> dù WASM nhanh hơn JS thuần 2-4 lần/điểm-ảnh, xử lý
-          // nhiều điểm ảnh hơn 7-10 lần vẫn THUA -> đúng lý do "chậm hơn" chủ báo). Giờ CHỈ
-          // cắt lấy 1 vùng vuông CHÍNH GIỮA khung hình (CROP_SIZE) để giải mã, giống hệt ý
-          // tưởng qrbox cũ — lần này diện tích còn nhỏ hơn cả 180 -> WASM phải thắng rõ.
-          var CROP_SIZE = 160; // NHỎ HƠN cả qrbox cũ (180-220) để chắc chắn thắng tốc độ,
-                                // không chỉ ngang bằng — bù lại bằng khung ngắm #aimBox rõ ràng.
+          // ⚠️ BUG ĐÃ SỬA TRƯỚC ĐÂY (bản đầu giải mã CẢ khung hình 640x480 = ~307.000 điểm
+          // ảnh mỗi lần -> chậm hơn hẳn bản html5-qrcode cũ). Từ đó CHỈ cắt 1 vùng vuông
+          // CHÍNH GIỮA khung hình (CROP_SIZE) để giải mã.
+          // ⚠️ BẢN TEST 2026-07-04: tăng CROP_SIZE từ 160 lên 240 (đi kèm tăng độ phân giải
+          // camera ở trên) — vẫn giữ đúng TỈ LỆ so với chiều nhỏ của khung hình như bản 160
+          // cũ (160/480 ≈ 240/720 ≈ 33%) nên khung ngắm #aimBox không cần đổi. Lý do: tem
+          // lành đọc tốt ở 160px, nhưng tem trầy/rách cần thêm điểm ảnh/module mới còn đủ
+          // margin sửa lỗi để giải mã (đã xác nhận bằng test thật ngoài trang, không đoán
+          // mò) — đổi lại có thể chậm hơn, CẦN chủ tự đo trên điện thoại thật (xem log
+          // "[KiemVan][PERF]" trong Safari Console) trước khi chốt số này.
+          var CROP_SIZE = 240;
           var sx = Math.max(0, (video.videoWidth - CROP_SIZE) / 2);
           var sy = Math.max(0, (video.videoHeight - CROP_SIZE) / 2);
           var sw = Math.min(CROP_SIZE, video.videoWidth);
@@ -379,12 +388,17 @@
           var ctx = canvas.getContext('2d', { willReadFrequently: true });
           wasmLoopRunning = true;
 
+          // Đo tốc độ giải mã thật (KHÔNG đoán) — gộp trung bình mỗi ~2s in ra Console 1
+          // lần (không spam mỗi frame), phục vụ chủ tự so sánh trước/sau khi đổi CROP_SIZE.
+          var perfCount = 0, perfTotalMs = 0, perfLastLog = performance.now();
+
           // Vòng lặp: vẽ ĐÚNG vùng crop trung tâm lên canvas ẩn nhỏ -> giải mã bằng WASM ->
           // lặp lại NGAY khi giải mã xong (không khoá cứng fps như bản cũ) -> nhanh tối đa
           // theo đúng tốc độ WASM cho phép, requestAnimationFrame tự giới hạn hợp lý (~60/s).
           function loop() {
             if (!wasmLoopRunning) return;
             try {
+              var t0 = performance.now();
               ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
               var imgData = ctx.getImageData(0, 0, sw, sh);
               window.ZXingWASM.readBarcodesFromImageData(imgData, { formats: ['QRCode'], maxNumberOfSymbols: 1 })
@@ -392,7 +406,18 @@
                   if (results && results.length && results[0].text) onScan(results[0].text);
                 })
                 .catch(function () {})
-                .then(function () { if (wasmLoopRunning) requestAnimationFrame(loop); });
+                .then(function () {
+                  perfCount++; perfTotalMs += (performance.now() - t0);
+                  var now = performance.now();
+                  var elapsedMs = now - perfLastLog;
+                  if (elapsedMs > 2000) {
+                    console.log('[KiemVan][PERF] CROP_SIZE=' + CROP_SIZE + ' vùng=' + sw + 'x' + sh +
+                      ' trung bình ' + (perfTotalMs / perfCount).toFixed(1) + 'ms/lần, ' +
+                      (perfCount / (elapsedMs / 1000)).toFixed(1) + ' lần/giây');
+                    perfCount = 0; perfTotalMs = 0; perfLastLog = now;
+                  }
+                  if (wasmLoopRunning) requestAnimationFrame(loop);
+                });
             } catch (e) {
               if (wasmLoopRunning) requestAnimationFrame(loop);
             }
