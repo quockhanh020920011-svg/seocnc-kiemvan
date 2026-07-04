@@ -116,7 +116,8 @@
 
 <script>
   // URL Web App Apps Script (chỉ dùng làm API lưu dữ liệu — trang này KHÔNG chạy trên
-  // Apps Script nữa, vì Apps Script tự bọc trang trong iframe chặn Camera).
+  // Apps Script nữa, vì Apps Script tự bọc trang trong iframe chặn Camera). Hạ tầng
+  // dùng CHUNG cho mọi khách hàng plugin (1 tài khoản của chủ) — xem panel_check.rb.
   var BASE_URL = 'https://script.google.com/macros/s/AKfycbzufOHkVqDXRG9CLevVvwd3-ETHzRu3imk2mLWZRgVKvvpMBsM1KwRbkbV2arXXweyQVw/exec';
   var SHEET_ID = new URLSearchParams(window.location.search).get('sheet') || '';
 
@@ -307,10 +308,16 @@
 
     // Giảm độ phân giải camera yêu cầu (640x480 là dư sức đọc QR, nhẹ máy hơn nhiều so
     // với mặc định full-HD của camera sau — vừa mượt hơn, vừa GIẢI MÃ NHANH HƠN vì ít
-    // điểm ảnh phải xử lý mỗi khung hình).
+    // điểm ảnh phải xử lý mỗi khung hình). qrbox nhỏ hơn (180 thay vì 220) = crop vùng
+    // giải mã nhỏ hơn từ khung hình, ít điểm ảnh xử lý hơn -> nhanh hơn chút; fps cao hơn
+    // (20 thay vì 15) = thử giải mã nhiều lần/giây hơn, giảm độ trễ nhận diện. KHÔNG dùng
+    // useBarCodeDetectorIfSupported (bộ giải mã phần cứng) — đã tra cứu: Safari iPhone
+    // (máy thợ xưởng đang dùng) KHÔNG hỗ trợ BarcodeDetector API tính tới giữa 2026, bật
+    // lên sẽ không nhanh hơn tí nào mà vẫn mang lại đúng rủi ro cũ (mất playsinline, xem
+    // bài học mục 0.3 BAN_GIAO_KIEMVAN_GIAI_DOAN_2.md) — không đáng đánh đổi.
     qr.start(
       { facingMode: 'environment' },
-      { fps: 15, qrbox: 220,
+      { fps: 20, qrbox: 180,
         videoConstraints: { facingMode: 'environment', width: { ideal: 640, max: 960 }, height: { ideal: 480, max: 720 } } },
       onScan, function () {})
       .then(function () {
