@@ -60,6 +60,13 @@
               font-size: 13px; color: #666; background: #fbfbfd; }
   #hidInput:focus { outline: none; border-color: #4659d8; border-style: solid; color: #222; background: #fff; }
 
+  #manualBox { margin-bottom: 12px; display: flex; gap: 8px; }
+  #manualInput { flex: 1; min-width: 0; padding: 10px 12px; border: 1.5px dashed #c7ccd6; border-radius: 9px;
+                 font-size: 13px; color: #666; background: #fbfbfd; }
+  #manualInput:focus { outline: none; border-color: #4659d8; border-style: solid; color: #222; background: #fff; }
+  #manualBtn { flex-shrink: 0; padding: 0 16px; border: none; border-radius: 9px; background: #4659d8;
+               color: #fff; font-size: 13px; font-weight: 700; }
+
   #camWrap { display: flex; justify-content: center; }
   #reader { width: 260px; max-width: 70vw; height: 260px; border-radius: 14px; overflow: hidden;
             background: #000; position: relative; box-shadow: 0 2px 10px rgba(31,42,68,.15); }
@@ -126,6 +133,11 @@
     <div id="dmgBox">
       <label for="dmgToggle">🔧 Chế độ đánh dấu tấm HƯ</label>
       <button id="dmgToggle" onclick="toggleDamageMode()"></button>
+    </div>
+
+    <div id="manualBox">
+      <input id="manualInput" placeholder="⌨️ Không quét được? Gõ số ID in trên tem" inputmode="numeric" autocomplete="off">
+      <button id="manualBtn" onclick="submitManual()">✓ Xác nhận</button>
     </div>
 
     <div id="hidBox">
@@ -503,6 +515,27 @@
       var code = hidInput.value.trim();
       hidInput.value = '';
       if (code) onScan(code);
+    });
+  }
+
+  // Nhập ID thủ công — cho ca QR rách/mờ tới mức không cách nào quét ra được nữa, thợ vẫn
+  // đọc bằng mắt số ID in sẵn trên tem (vd "34") rồi gõ tay. CÓ nút "Xác nhận" bấm được
+  // riêng (không chỉ trông vào phím Enter) vì bàn phím số của điện thoại (inputmode=
+  // numeric) thường KHÔNG có phím Enter/Go để gửi. Tái dùng thẳng onScan() y hệt ô máy
+  // quét mã vạch rời ở trên.
+  var manualInput = document.getElementById('manualInput');
+  function submitManual() {
+    if (!manualInput) return;
+    var code = manualInput.value.trim();
+    if (!code) { manualInput.focus(); return; }
+    manualInput.value = '';
+    onScan(code);
+  }
+  if (manualInput) {
+    manualInput.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      submitManual();
     });
   }
 
