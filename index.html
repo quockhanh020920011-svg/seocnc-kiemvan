@@ -70,6 +70,12 @@
     max-width: 100% !important; max-height: 100% !important;
     object-fit: cover !important; position: absolute !important; top: 0; left: 0;
   }
+  /* Khung ngắm — chỉ báo TRỰC QUAN vùng camera thực sự đem giải mã (bộ WASM chỉ cắt 1 vùng
+     nhỏ chính giữa để nhanh hơn, xem CROP_SIZE trong startWasmScanning()) — không cần khớp
+     tuyệt đối từng điểm ảnh, chỉ để người quét biết đưa mã vào giữa khung cho chắc ăn. */
+  #aimBox { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 66%; height: 66%; border: 2px solid rgba(255,255,255,.85);
+            border-radius: 10px; box-shadow: 0 0 0 999px rgba(0,0,0,.28); pointer-events: none; }
   #startBtn { width: 100%; padding: 16px; border: none; border-radius: 12px; background: #4659d8;
               color: #fff; font-size: 16px; font-weight: 700; margin-top: 14px; }
   #startBtn:disabled { opacity: .6; }
@@ -127,7 +133,9 @@
     </div>
 
     <div id="camWrap">
-      <div id="reader"></div>
+      <div id="reader">
+        <div id="aimBox"></div>
+      </div>
     </div>
     <button id="startBtn" onclick="startScanning()">▶ Bấm để bắt đầu quét</button>
     <div id="camHelp">
@@ -338,9 +346,13 @@
       video: { facingMode: 'environment', width: { ideal: 640, max: 960 }, height: { ideal: 480, max: 720 } }
     }).then(function (stream) {
       wasmStream = stream;
-      readerEl.innerHTML = '';
+      // KHÔNG dùng readerEl.innerHTML = '' (sẽ xoá mất #aimBox khung ngắm) — chỉ dọn
+      // đúng thẻ <video> cũ (nếu bấm "thử lại" sau khi lỗi) rồi thêm video mới lên TRƯỚC
+      // #aimBox để khung ngắm luôn nổi ở trên (CSS position/z-index lo phần hiển thị).
+      var oldVideo = readerEl.querySelector('video');
+      if (oldVideo) oldVideo.remove();
       var video = document.createElement('video');
-      readerEl.appendChild(video);
+      readerEl.prepend(video);
       fixVideoEl(video);
       video.srcObject = stream;
 
@@ -349,19 +361,32 @@
         video.addEventListener('loadedmetadata', function onMeta() {
           video.removeEventListener('loadedmetadata', onMeta);
           if (!video.videoWidth || !video.videoHeight) { settled = true; reject(new Error('video 0x0')); return; }
+
+          // ⚠️ BUG ĐÃ SỬA (bản trước giải mã CẢ khung hình 640x480 = ~307.000 điểm ảnh mỗi
+          // lần -> nhiều hơn ~7-10 LẦN so với bản html5-qrcode cũ (qrbox 180-220px, chỉ
+          // ~32.000-48.000 điểm ảnh) -> dù WASM nhanh hơn JS thuần 2-4 lần/điểm-ảnh, xử lý
+          // nhiều điểm ảnh hơn 7-10 lần vẫn THUA -> đúng lý do "chậm hơn" chủ báo). Giờ CHỈ
+          // cắt lấy 1 vùng vuông CHÍNH GIỮA khung hình (CROP_SIZE) để giải mã, giống hệt ý
+          // tưởng qrbox cũ — lần này diện tích còn nhỏ hơn cả 180 -> WASM phải thắng rõ.
+          var CROP_SIZE = 160; // NHỎ HƠN cả qrbox cũ (180-220) để chắc chắn thắng tốc độ,
+                                // không chỉ ngang bằng — bù lại bằng khung ngắm #aimBox rõ ràng.
+          var sx = Math.max(0, (video.videoWidth - CROP_SIZE) / 2);
+          var sy = Math.max(0, (video.videoHeight - CROP_SIZE) / 2);
+          var sw = Math.min(CROP_SIZE, video.videoWidth);
+          var sh = Math.min(CROP_SIZE, video.videoHeight);
           var canvas = document.createElement('canvas');
-          canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+          canvas.width = sw; canvas.height = sh;
           var ctx = canvas.getContext('2d', { willReadFrequently: true });
           wasmLoopRunning = true;
 
-          // Vòng lặp: vẽ khung hình hiện tại lên canvas ẩn -> giải mã bằng WASM -> lặp lại
-          // NGAY khi giải mã xong (không khoá cứng fps như bản cũ) -> nhanh tối đa theo
-          // đúng tốc độ WASM cho phép, requestAnimationFrame tự giới hạn hợp lý (~60/giây).
+          // Vòng lặp: vẽ ĐÚNG vùng crop trung tâm lên canvas ẩn nhỏ -> giải mã bằng WASM ->
+          // lặp lại NGAY khi giải mã xong (không khoá cứng fps như bản cũ) -> nhanh tối đa
+          // theo đúng tốc độ WASM cho phép, requestAnimationFrame tự giới hạn hợp lý (~60/s).
           function loop() {
             if (!wasmLoopRunning) return;
             try {
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+              var imgData = ctx.getImageData(0, 0, sw, sh);
               window.ZXingWASM.readBarcodesFromImageData(imgData, { formats: ['QRCode'], maxNumberOfSymbols: 1 })
                 .then(function (results) {
                   if (results && results.length && results[0].text) onScan(results[0].text);
