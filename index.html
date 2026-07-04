@@ -480,8 +480,22 @@
     });
   }
 
-  refreshStatus();
-  setInterval(refreshStatus, 3000);
+  // Tạm dừng tự làm mới khi tab không hiển thị (khoá màn hình, chuyển sang app khác) —
+  // giảm tải lên máy chủ dùng chung khi nhiều người mở trang mà không thật sự đang thao
+  // tác (đỡ cộng dồn lượt gọi vô ích lúc đông người dùng cùng lúc), cũng đỡ hao pin.
+  var statusTimer = null;
+  function startStatusPolling() {
+    if (statusTimer) return;
+    refreshStatus();
+    statusTimer = setInterval(refreshStatus, 3000);
+  }
+  function stopStatusPolling() {
+    if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) stopStatusPolling(); else startStatusPolling();
+  });
+  startStatusPolling();
 
   function toggleMissing() {
     var box = document.getElementById('missingList');
