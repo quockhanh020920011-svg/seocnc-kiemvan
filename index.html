@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SEO_CNC — Kiểm ván</title>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- Bộ giải mã WebAssembly (nhanh hơn nhiều lần vì chạy gần bằng code máy, không phải JS
+     thuần) — dùng làm phương án CHÍNH; nếu tải/khởi tạo lỗi vì bất kỳ lý do gì (mạng chặn,
+     trình duyệt quá cũ...) thì TỰ ĐỘNG rớt về html5-qrcode ở trên (phương án CŨ, đã ổn định
+     nhiều vòng test) — xem startScanning() trong script bên dưới, KHÔNG bao giờ để trang
+     không quét được gì cả. -->
+<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.0/dist/iife/reader/index.js"></script>
 <style>
   /* Bảng màu khớp với hộp thoại SketchUp (BuyDialog) — 1 thương hiệu nhất quán xuyên suốt
      mọi màn hình của SEO_CNC_TOOL, không phải màu tự chọn riêng cho trang này. */
@@ -285,36 +291,107 @@
   //    video/canvas bên trong vẽ ra kích thước 0 luôn: camera vẫn bật (đèn cam sáng) nhưng
   //    không có hình gì hiện lên, dù sau đó có bật display:block lại cũng không tự sửa.
   var qr = SHEET_ID ? new Html5Qrcode('reader') : null;
-  function startScanning() {
-    if (!qr) return;
-    if (!nameInput.value.trim()) {
-      document.getElementById('nameWarn').style.display = 'block';
-      nameInput.focus();
-      return;
-    }
-    document.getElementById('nameWarn').style.display = 'none';
-    document.getElementById('startBtn').disabled = true;
-    document.getElementById('startBtn').textContent = 'Đang mở Camera…';
-    document.getElementById('camHelp').style.display = 'none';
 
-    // Bắt đúng KHOẢNH KHẮC thẻ <video> được thư viện tạo ra (sớm hơn NHIỀU so với chờ
-    // qr.start() giải quyết xong) và gắn thuộc tính "phát trong khung" NGAY LẬP TỨC —
-    // gắn trễ (sau khi start() xong, camera đã chạy) không ăn: Safari đã lỡ quyết định
-    // hiện thanh điều khiển gốc (Play/loa/Phát trực tiếp) từ trước đó rồi.
-    function fixVideoEl(v) {
-      if (!v || v.dataset.inlineFixed) return;
-      v.dataset.inlineFixed = '1';
-      v.setAttribute('playsinline', 'true');
-      v.setAttribute('webkit-playsinline', 'true');
-      v.setAttribute('muted', 'true');
-      v.setAttribute('autoplay', 'true');
-      v.removeAttribute('controls');
-      v.disablePictureInPicture = true;
-      v.muted = true;
-      v.controls = false;
-      var p = v.play();
-      if (p && p.catch) p.catch(function () {});
-    }
+  // Bắt đúng KHOẢNH KHẮC thẻ <video> được tạo ra (sớm hơn NHIỀU so với chờ camera "sẵn
+  // sàng" xong) và gắn thuộc tính "phát trong khung" NGAY LẬP TỨC — gắn trễ (sau khi
+  // camera đã chạy) không ăn: Safari đã lỡ quyết định hiện thanh điều khiển gốc (Play/loa/
+  // Phát trực tiếp) từ trước đó rồi. Dùng CHUNG cho cả 2 đường quét (WASM lẫn html5-qrcode).
+  function fixVideoEl(v) {
+    if (!v || v.dataset.inlineFixed) return;
+    v.dataset.inlineFixed = '1';
+    v.setAttribute('playsinline', 'true');
+    v.setAttribute('webkit-playsinline', 'true');
+    v.setAttribute('muted', 'true');
+    v.setAttribute('autoplay', 'true');
+    v.removeAttribute('controls');
+    v.disablePictureInPicture = true;
+    v.muted = true;
+    v.controls = false;
+    var p = v.play();
+    if (p && p.catch) p.catch(function () {});
+  }
+
+  // ===== Bộ giải mã NHANH bằng WebAssembly (zxing-wasm) — PHƯƠNG ÁN CHÍNH ====================
+  // Chạy gần bằng code máy (không phải JS thuần như html5-qrcode) -> nhanh hơn nhiều lần.
+  // Tự quản lý camera (getUserMedia) RIÊNG, dùng lại NGUYÊN VẸN fixVideoEl() ở trên (không
+  // viết lại phần đã test kỹ). Nếu BẤT KỲ bước nào ở đây lỗi (script CDN chặn, WASM không
+  // tải được, trình duyệt quá cũ...) thì startScanning() bên dưới TỰ ĐỘNG rớt về
+  // startHtml5QrcodeScanning() (phương án CŨ, y hệt trước khi đổi, đã ổn định nhiều vòng
+  // test) — KHÔNG bao giờ để trang biến thành không quét được gì cả.
+  var wasmReady = false;
+  (function preloadWasm() {
+    if (!(window.ZXingWASM && window.ZXingWASM.prepareZXingModule)) return;
+    window.ZXingWASM.prepareZXingModule({ fireImmediately: true })
+      .then(function () { wasmReady = true; })
+      .catch(function (e) { console.error('[KiemVan] Không tải được bộ giải mã nhanh (WASM), sẽ dùng bộ quét cũ khi bấm Bắt đầu:', e); });
+  })();
+
+  var wasmLoopRunning = false, wasmStream = null;
+  function stopWasmLoop() {
+    wasmLoopRunning = false;
+    if (wasmStream) { wasmStream.getTracks().forEach(function (t) { t.stop(); }); wasmStream = null; }
+  }
+
+  function startWasmScanning() {
+    var readerEl = document.getElementById('reader');
+    return navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 640, max: 960 }, height: { ideal: 480, max: 720 } }
+    }).then(function (stream) {
+      wasmStream = stream;
+      readerEl.innerHTML = '';
+      var video = document.createElement('video');
+      readerEl.appendChild(video);
+      fixVideoEl(video);
+      video.srcObject = stream;
+
+      return new Promise(function (resolve, reject) {
+        var settled = false;
+        video.addEventListener('loadedmetadata', function onMeta() {
+          video.removeEventListener('loadedmetadata', onMeta);
+          if (!video.videoWidth || !video.videoHeight) { settled = true; reject(new Error('video 0x0')); return; }
+          var canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+          var ctx = canvas.getContext('2d', { willReadFrequently: true });
+          wasmLoopRunning = true;
+
+          // Vòng lặp: vẽ khung hình hiện tại lên canvas ẩn -> giải mã bằng WASM -> lặp lại
+          // NGAY khi giải mã xong (không khoá cứng fps như bản cũ) -> nhanh tối đa theo
+          // đúng tốc độ WASM cho phép, requestAnimationFrame tự giới hạn hợp lý (~60/giây).
+          function loop() {
+            if (!wasmLoopRunning) return;
+            try {
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              window.ZXingWASM.readBarcodesFromImageData(imgData, { formats: ['QRCode'], maxNumberOfSymbols: 1 })
+                .then(function (results) {
+                  if (results && results.length && results[0].text) onScan(results[0].text);
+                })
+                .catch(function () {})
+                .then(function () { if (wasmLoopRunning) requestAnimationFrame(loop); });
+            } catch (e) {
+              if (wasmLoopRunning) requestAnimationFrame(loop);
+            }
+          }
+          loop();
+          if (!settled) { settled = true; resolve(); }
+        });
+      });
+    });
+  }
+
+  function handleCameraError(e, mo, poll) {
+    if (mo) mo.disconnect();
+    if (poll) clearInterval(poll);
+    stopWasmLoop();
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('startBtn').textContent = '▶ Bấm để bắt đầu quét (thử lại)';
+    document.getElementById('camHelp').style.display = 'block';
+    console.error('[KiemVan] Lỗi mở Camera:', e);
+  }
+
+  // ===== Bộ giải mã CŨ bằng html5-qrcode — PHƯƠNG ÁN DỰ PHÒNG (giữ nguyên như trước) =========
+  function startHtml5QrcodeScanning() {
+    if (!qr) return;
     var readerEl = document.getElementById('reader');
     var mo = new MutationObserver(function () { fixVideoEl(readerEl.querySelector('video')); });
     mo.observe(readerEl, { childList: true, subtree: true });
@@ -326,15 +403,6 @@
       if (++tries > 20) clearInterval(poll);
     }, 100);
 
-    // Giảm độ phân giải camera yêu cầu (640x480 là dư sức đọc QR, nhẹ máy hơn nhiều so
-    // với mặc định full-HD của camera sau — vừa mượt hơn, vừa GIẢI MÃ NHANH HƠN vì ít
-    // điểm ảnh phải xử lý mỗi khung hình). qrbox nhỏ hơn (180 thay vì 220) = crop vùng
-    // giải mã nhỏ hơn từ khung hình, ít điểm ảnh xử lý hơn -> nhanh hơn chút; fps cao hơn
-    // (20 thay vì 15) = thử giải mã nhiều lần/giây hơn, giảm độ trễ nhận diện. KHÔNG dùng
-    // useBarCodeDetectorIfSupported (bộ giải mã phần cứng) — đã tra cứu: Safari iPhone
-    // (máy thợ xưởng đang dùng) KHÔNG hỗ trợ BarcodeDetector API tính tới giữa 2026, bật
-    // lên sẽ không nhanh hơn tí nào mà vẫn mang lại đúng rủi ro cũ (mất playsinline, xem
-    // bài học mục 0.3 BAN_GIAO_KIEMVAN_GIAI_DOAN_2.md) — không đáng đánh đổi.
     qr.start(
       { facingMode: 'environment' },
       { fps: 20, qrbox: 180,
@@ -344,13 +412,31 @@
         document.getElementById('startBtn').style.display = 'none';
         fixVideoEl(readerEl.querySelector('video'));
       })
-      .catch(function (e) {
-        mo.disconnect(); clearInterval(poll);
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('startBtn').textContent = '▶ Bấm để bắt đầu quét (thử lại)';
-        document.getElementById('camHelp').style.display = 'block';
-        console.error('getUserMedia error:', e);
+      .catch(function (e) { handleCameraError(e, mo, poll); });
+  }
+
+  function startScanning() {
+    if (!nameInput.value.trim()) {
+      document.getElementById('nameWarn').style.display = 'block';
+      nameInput.focus();
+      return;
+    }
+    document.getElementById('nameWarn').style.display = 'none';
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('startBtn').textContent = 'Đang mở Camera…';
+    document.getElementById('camHelp').style.display = 'none';
+
+    if (wasmReady) {
+      startWasmScanning().then(function () {
+        document.getElementById('startBtn').style.display = 'none';
+      }).catch(function (e) {
+        console.error('[KiemVan] Bộ quét nhanh (WASM) lỗi, chuyển sang bộ quét cũ:', e);
+        stopWasmLoop();
+        startHtml5QrcodeScanning();
       });
+    } else {
+      startHtml5QrcodeScanning();
+    }
   }
 
   // Máy quét mã vạch rời (USB/Bluetooth) hoạt động kiểu GIẢ BÀN PHÍM: tự "gõ" mã rồi gửi
