@@ -40,6 +40,27 @@
   #missingList .brk .id { color: #b35c00; }
   #missingList .section { font-weight: 700; color: #999; padding-top: 10px; font-size: 11px;
                            text-transform: uppercase; }
+  #copyBrokenBtn { display: none; margin-top: 10px; width: 100%; padding: 9px; border: 1px solid #f0c99a;
+                   border-radius: 9px; background: #fff8ef; font-size: 13px; color: #b35c00; font-weight: 600; }
+
+  #completeBanner { display: none; margin-bottom: 14px; padding: 14px; border-radius: 12px;
+                     font-size: 14px; font-weight: 700; text-align: center; line-height: 1.5; }
+  #completeBanner.ok  { background: #e7f7ec; color: #176b32; border: 1px solid #bfe8cd; }
+  #completeBanner.brk { background: #fdeaea; color: #b35c00; border: 1px solid #f5cccc; }
+
+  #fixToggleBtn { width: 100%; padding: 9px; border: none; border-radius: 9px; background: transparent;
+                  font-size: 12.5px; color: #888; text-align: center; margin-bottom: 8px; }
+  #fixPanel { display: none; margin-bottom: 12px; padding: 12px; background: #fff; border-radius: 10px;
+              border: 1px dashed #d8adad; }
+  #fixPanel .lbl { font-size: 12px; color: #b35c00; font-weight: 600; margin-bottom: 8px; }
+  #fixInput { width: 100%; padding: 10px 12px; border: 1.5px solid #c7ccd6; border-radius: 9px;
+              font-size: 13px; margin-bottom: 8px; }
+  #fixInput:focus { outline: none; border-color: #4659d8; }
+  .fixBtns { display: flex; gap: 6px; }
+  .fixBtns button { flex: 1; padding: 9px 4px; border: none; border-radius: 8px; font-size: 12px; font-weight: 700; }
+  .fixBtns .st1 { background: #f0f1f5; color: #555; }
+  .fixBtns .st2 { background: #e7f7ec; color: #176b32; }
+  .fixBtns .st3 { background: #fdeaea; color: #b35c00; }
 
   #nameBox { display: flex; gap: 8px; margin-bottom: 12px; }
   #nameBox input { flex: 1; padding: 10px 12px; border: 1.5px solid #c7ccd6; border-radius: 9px; font-size: 15px; }
@@ -118,11 +139,14 @@
   </div>
 
   <div id="app" style="display:none;">
+    <div id="completeBanner"></div>
+
     <div id="dash">
       <div id="count">…<small> / … đã kiểm</small></div>
       <div id="brokenCount"></div>
       <button id="missingBtn" onclick="toggleMissing()">Xem danh sách còn thiếu / hư</button>
       <div id="missingList"></div>
+      <button id="copyBrokenBtn" onclick="copyBrokenList()">📋 Copy danh sách Hư để gửi khách</button>
     </div>
 
     <div id="nameBox">
@@ -142,6 +166,17 @@
 
     <div id="hidBox">
       <input id="hidInput" placeholder="🔌 Dùng máy quét mã vạch rời? Bấm vào đây rồi quét" autocomplete="off">
+    </div>
+
+    <button id="fixToggleBtn" onclick="toggleFixBox()">🔧 Lỡ quét nhầm? Sửa lại trạng thái 1 tấm</button>
+    <div id="fixPanel">
+      <div class="lbl">Gõ ID tấm cần sửa rồi chọn đúng trạng thái:</div>
+      <input id="fixInput" placeholder="ID tấm" inputmode="numeric" autocomplete="off">
+      <div class="fixBtns">
+        <button class="st1" onclick="submitFix('Chưa kiểm')">↩️ Chưa kiểm</button>
+        <button class="st2" onclick="submitFix('Đã kiểm')">✅ Đã kiểm</button>
+        <button class="st3" onclick="submitFix('Hư')">🔧 Hư</button>
+      </div>
     </div>
 
     <div id="camWrap">
@@ -228,6 +263,48 @@
     var b = document.getElementById('brokenCount');
     if (brokenCount) { b.style.display = 'block'; b.textContent = '🔧 ' + brokenCount + ' tấm bị đánh dấu HƯ'; }
     else { b.style.display = 'none'; }
+    document.getElementById('copyBrokenBtn').style.display = brokenCount ? 'block' : 'none';
+  }
+
+  // "Hoàn thành" = không còn tấm nào ở trạng thái Chưa kiểm (Hư vẫn tính là đã xử lý
+  // xong phần kiểm tra, chỉ là cần làm bù). missingCount lấy từ res.missing.length
+  // (mảng "Chưa kiểm" trả về từ server) — KHÔNG tự suy ra từ checked+brokenCount vì
+  // 2 số đó cộng lại đã bằng total khi hoàn thành, dùng thẳng độ dài mảng cho chắc.
+  function renderComplete(total, brokenCount, missingCount) {
+    var el = document.getElementById('completeBanner');
+    if (total > 0 && missingCount === 0) {
+      el.style.display = 'block';
+      el.className = brokenCount > 0 ? 'brk' : 'ok';
+      el.textContent = brokenCount > 0
+        ? '🎉 Đã kiểm xong toàn bộ đơn hàng — có ' + brokenCount + ' tấm HƯ cần làm bù.'
+        : '🎉 Đã kiểm xong toàn bộ đơn hàng — không có tấm nào bị hư!';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
+  // Danh sách Hư nhớ lại gần nhất (từ lần refreshStatus gần nhất) để nút Copy dùng
+  // ngay, không cần gọi lại máy chủ.
+  var lastBroken = [];
+  function copyBrokenList() {
+    if (!lastBroken.length) return;
+    var lines = lastBroken.map(function (m) {
+      return '#' + m.id + ' ' + m.name + ' — ' + m.size + ' · ' + m.sheet;
+    });
+    var text = '🔧 Danh sách tấm HƯ (' + lastBroken.length + ' tấm):\n' + lines.join('\n');
+    function ok() { showToast('ok', '✅ Đã copy — dán vào Zalo để gửi khách.'); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand('copy'); ok(); } catch (e) { showToast('err', '❌ Không copy được.'); }
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(ok).catch(fallback);
+    } else {
+      fallback();
+    }
   }
 
   function boardLine(m) {
@@ -252,8 +329,10 @@
     if (!SHEET_ID) return;
     post('status').then(function (res) {
       if (!res.ok) return;
+      lastBroken = res.broken || [];
       renderCount(res.checked, res.total, res.brokenCount);
       renderMissing(res.missing || [], res.broken || []);
+      renderComplete(res.total, res.brokenCount, (res.missing || []).length);
       document.getElementById('orderName').textContent = res.order_name || '';
     });
   }
@@ -536,6 +615,40 @@
       if (e.key !== 'Enter') return;
       e.preventDefault();
       submitManual();
+    });
+  }
+
+  // Sửa lại tấm quét NHẦM — ẨN mặc định (bấm mới hiện) vì đây là thao tác SỬA LỖI ít
+  // dùng, không phải luồng chính, để lộ ra ngoài dễ bấm nhầm/rối mắt khi đang quét bình
+  // thường. Gọi action riêng "override_status" (KHÔNG dùng lại onScan()/action "scan")
+  // vì phải BỎ QUA kiểm tra trùng — đây chính là lúc CẦN ghi đè trạng thái cũ.
+  var fixOpen = false;
+  function toggleFixBox() {
+    fixOpen = !fixOpen;
+    document.getElementById('fixPanel').style.display = fixOpen ? 'block' : 'none';
+  }
+  function submitFix(status) {
+    var el = document.getElementById('fixInput');
+    var code = el.value.trim();
+    if (!code) { el.focus(); return; }
+    var scanner = nameInput.value.trim();
+    if (!scanner) {
+      showToast('err', '⚠️ Nhập tên người quét trước đã!');
+      return;
+    }
+    post('override_status', { code: code, status: status, scanner: scanner }).then(function (res) {
+      if (!res.ok) {
+        showToast('err', '❌ ' + (res.message || 'Không sửa được'));
+        vibrate([120, 60, 120]);
+        return;
+      }
+      showToast(status === 'Hư' ? 'brk' : 'ok', '✅ Đã sửa #' + code + ' (' + res.name + ') → ' + status);
+      vibrate([40]);
+      el.value = '';
+      renderCount(res.checked, res.total, res.brokenCount);
+      refreshStatus();
+    }).catch(function () {
+      showToast('err', '❌ Lỗi mạng, thử lại.');
     });
   }
 
